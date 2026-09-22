@@ -63,6 +63,23 @@ longueur, jusqu'a trouver le mot dont le hash correspond.
 Sert de reference "cout brut" d'un calcul intensif (hachage) avant
 d'introduire les questions de structure de donnees / cache.
 
+**Optimisation appliquee (comparaison binaire 64 bits) :** suite au constat
+du goulet hex, `BruteForceGenerator` a ete corrige pour supprimer toute
+conversion textuelle de la boucle chaude :
+
+- le hash cible (`targetHashHex`) est decode **une seule fois** en `byte[]`
+  au debut de `crack()` (plus jamais de parsing hexadecimal par tentative)
+- `sha256()` (qui produisait une `String` hex via `String.format`) est
+  supprimee : on compare directement les octets bruts du digest
+- la comparaison se fait par mots de **64 bits** (`VarHandle` sur `byte[]`,
+  equivalent Java de `encoding/binary.Uint64` en Go) : 4 comparaisons de
+  `long` au lieu de 32 comparaisons de `byte` (et surtout 0 conversion hex)
+
+**Gain mesure** : Niveau 2 (10,76M tentatives) passe de **64 287 ms a
+779 ms**, soit environ **x82**. Niveau 1 passe de 1063 ms a 36 ms. Confirme
+que le goulet identifie par le profiling CPU (String.format = 96,7% du
+temps) etait bien le vrai probleme.
+
 ### CacheAccessBenchmark
 
 Compare, sur un tableau de 64 millions d'entiers (~256 Mo, largement au-dela
@@ -290,3 +307,8 @@ suppriment ce goulet en remplacant `String.format` par une table
     ce constat (equivalent du "35% du temps dans hex.EncodeToString").
     Resultat mesure : 96,7% du CPU dans le parsing/formatage hex contre
     0,56% dans le calcul SHA-256 reel, bien au-dela des 35% attendus.
+13. Correction de `BruteForceGenerator` : decodage du hash cible une seule
+    fois au demarrage, comparaison des octets bruts par mots de 64 bits
+    (`VarHandle`, equivalent Java du `uint64` en Go) au lieu de comparer
+    des chaines hexadecimales. Gain mesure : x82 sur le Niveau 2 (64 287 ms
+    -> 779 ms).
