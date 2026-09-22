@@ -20,6 +20,7 @@ src/main/java/benchmarks/
 
 tools/
     flamegraph.py                   Genere un flamegraph HTML interactif a partir d'un .jfr
+    analyze_bottleneck.py           Quantifie la part du CPU passee dans le parsing/formatage hex vs le SHA-256 reel
 
 profiles/                           Sorties de profiling generees (.jfr, flamegraph.html) - non versionnees
 ```
@@ -219,6 +220,32 @@ la pile), pas dans le calcul SHA-256 lui-meme. C'est exactement le probleme
 que corrige `FixedBufferBenchmark` (buffer fixe + mutation par index au
 lieu de `String.format`).
 
+## Detection du goulet hex
+
+Quantification precise de ce constat avec `tools/analyze_bottleneck.py`,
+qui classe chaque echantillon CPU du `.jfr` selon qu'il tombe dans le
+parsing/formatage hexadecimal ou dans le calcul SHA-256 reel :
+
+```bash
+python3 tools/analyze_bottleneck.py profiles/cpu.jfr
+```
+
+**Resultat mesure** (5026 echantillons, `BruteForceGenerator`) :
+
+| Categorie | Echantillons | Part du CPU |
+|---|---|---|
+| Parsing/formatage hex (`String.format("%02x", ...)`) | 4862 | **96,7 %** |
+| Calcul SHA-256 reel (`sun.security.provider.SHA2`) | 28 | 0,56 % |
+
+Bien au-dela des 35 % attendus : `String.format` re-analyse le pattern
+`"%02x"` **par regex, a chaque octet, a chaque appel** (`Matcher.reset`,
+`Pattern$BmpCharProperty.match`, `Pattern$Branch.match` = 49 % du CPU a
+eux seuls) au lieu de reutiliser un formattage precompile. Le calcul
+cryptographique lui-meme est negligeable face au cout de la conversion
+textuelle. `FixedBufferBenchmark` et `ZeroAllocValidationBenchmark`
+suppriment ce goulet en remplacant `String.format` par une table
+`HEX_DIGITS` et un buffer mute par index.
+
 ## Historique du projet
 
 1. Ecriture de `BruteForceGenerator` : cassage de hash SHA-256 par force
@@ -259,3 +286,7 @@ lieu de `String.format`).
     pprof -http=:8080`). Constat confirme par le flamegraph : le vrai
     cout n'est pas le hachage SHA-256 mais `String.format` dans
     `sha256()`, ce qui justifiait `FixedBufferBenchmark`.
+12. Ecriture de `tools/analyze_bottleneck.py` pour quantifier precisement
+    ce constat (equivalent du "35% du temps dans hex.EncodeToString").
+    Resultat mesure : 96,7% du CPU dans le parsing/formatage hex contre
+    0,56% dans le calcul SHA-256 reel, bien au-dela des 35% attendus.
