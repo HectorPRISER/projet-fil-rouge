@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(time java -cp out benchmarks.StringConcatEscapeBenchmark)",
+      "Bash(java -cp out benchmarks.StructPaddingBenchmark)"
+    ]
+  }
+}
