@@ -17,6 +17,11 @@ src/main/java/benchmarks/
     FixedBufferBenchmark.java       Buffer fixe + mutation par index vs StringBuilder/String.format
     ZeroAllocValidationBenchmark.java Validation 0 B/op, 0 allocs/op sur la boucle critique
     Main.java                       Lance les 8 benchmarks a la suite
+
+tools/
+    flamegraph.py                   Genere un flamegraph HTML interactif a partir d'un .jfr
+
+profiles/                           Sorties de profiling generees (.jfr, flamegraph.html) - non versionnees
 ```
 
 Tous les fichiers sont dans le package `benchmarks`.
@@ -184,6 +189,36 @@ sur 5M iterations, negligeable), verdict **PASS**, debit de l'ordre de
 Point d'entree unique qui appelle les `main()` des 8 classes ci-dessus dans
 l'ordre, avec un separateur affiche avant chacune.
 
+## Profiling CPU & Flamegraph
+
+Equivalent Java de `go test -cpuprofile cpu.prof` + `go tool pprof
+-http=:8080` : le JDK fournit nativement JFR (JDK Flight Recorder) pour le
+profiling CPU (aucune installation requise), et `tools/flamegraph.py`
+genere un flamegraph interactif autonome (HTML + SVG + JS inline, sans
+serveur ni dependance externe) a partir de l'enregistrement.
+
+```bash
+# 1. Profiler le "craqueur" (BruteForceGenerator) avec JFR
+java -XX:StartFlightRecording=filename=profiles/cpu.jfr,settings=profile \
+     -cp out benchmarks.BruteForceGenerator
+
+# 2. Generer le flamegraph interactif a partir de l'enregistrement
+python3 tools/flamegraph.py profiles/cpu.jfr profiles/flamegraph.html
+
+# 3. Inspecter : ouvrir profiles/flamegraph.html dans un navigateur
+#    (fichier autonome, pas besoin de serveur, contrairement a pprof -http)
+```
+
+Le flamegraph est cliquable (zoom sur un frame) et affiche au survol le
+nombre d'echantillons et le pourcentage du temps CPU total.
+
+**Constat obtenu sur `BruteForceGenerator`** (5026 echantillons) : la quasi
+totalite du temps CPU est passee dans `String.format("%02x", b)` appele
+depuis `sha256()` (visible via `java.util.Formatter.parse`/`format` dans
+la pile), pas dans le calcul SHA-256 lui-meme. C'est exactement le probleme
+que corrige `FixedBufferBenchmark` (buffer fixe + mutation par index au
+lieu de `String.format`).
+
 ## Historique du projet
 
 1. Ecriture de `BruteForceGenerator` : cassage de hash SHA-256 par force
@@ -218,3 +253,9 @@ l'ordre, avec un separateur affiche avant chacune.
     allocs/op sur une boucle critique entierement basee sur buffers
     reutilises (equivalent Java du `go test -bench . -benchmem`). Verdict
     PASS mesure, ~12M ops/s.
+11. Profiling CPU de `BruteForceGenerator` avec JFR (equivalent Java du
+    `go test -cpuprofile`) et ecriture de `tools/flamegraph.py`, qui
+    genere un flamegraph interactif autonome (equivalent du `go tool
+    pprof -http=:8080`). Constat confirme par le flamegraph : le vrai
+    cout n'est pas le hachage SHA-256 mais `String.format` dans
+    `sha256()`, ce qui justifiait `FixedBufferBenchmark`.
