@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
-"""Equivalent de l'analyse "plus de X% du temps CPU dans hex.EncodeToString" :
-reutilise le parsing de tools/flamegraph.py sur un .jfr et calcule quelle
-fraction des echantillons CPU passe par la conversion hex (String.format /
-Formatter / regex de parsing du pattern), par opposition au calcul SHA-256
-lui-meme.
-
-Usage:
-    python3 tools/analyze_bottleneck.py profiles/cpu.jfr
+"""Quantifie la part du CPU dans le parsing/formatage hex vs le SHA-256 reel.
+Usage: python3 tools/analyze_bottleneck.py profiles/cpu.jfr
 """
 import sys
 from collections import Counter

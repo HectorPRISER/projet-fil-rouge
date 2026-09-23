@@ -11,8 +11,7 @@ public class BruteForceGenerator {
     private static final char[] ALPHABET =
             "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".toCharArray();
 
-    // Vue "mot de 64 bits" sur un byte[] : lit/compare 8 octets d'un coup au lieu
-    // d'octet par octet, equivalent Java de encoding/binary.Uint64 en Go.
+    // Vue 64 bits sur un byte[] : compare 8 octets d'un coup au lieu d'octet par octet.
     private static final VarHandle LONG_VIEW =
             MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.nativeOrder());
 
@@ -29,8 +28,7 @@ public class BruteForceGenerator {
     private static void crack(String targetHashHex, int minLength, int maxLength, String label)
             throws NoSuchAlgorithmException {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        // Decode le hash cible UNE SEULE FOIS ("au boot"), plus jamais de conversion
-        // textuelle dans la boucle chaude : on compare des octets bruts, pas des String.
+        // Decode une seule fois : la boucle compare des octets bruts, jamais de String.
         byte[] targetHash = decodeHex(targetHashHex);
 
         attempts = 0;
@@ -75,9 +73,7 @@ public class BruteForceGenerator {
         }
     }
 
-    // Compare 32 octets (SHA-256) par blocs de 64 bits au lieu d'octet par octet :
-    // 4 comparaisons de long au lieu de 32 comparaisons de byte, et surtout aucune
-    // conversion hexadecimale/String au passage.
+    // 32 octets SHA-256 compares en 4 mots de 64 bits, sans conversion hex/String.
     private static boolean hashEquals(byte[] a, byte[] b) {
         for (int i = 0; i < 32; i += 8) {
             if ((long) LONG_VIEW.get(a, i) != (long) LONG_VIEW.get(b, i)) {

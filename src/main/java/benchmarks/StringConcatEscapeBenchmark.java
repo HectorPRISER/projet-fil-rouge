@@ -3,20 +3,16 @@ package benchmarks;
 import com.sun.management.ThreadMXBean;
 import java.lang.management.ManagementFactory;
 
-// Equivalent Java du diagnostic "go build -gcflags=-m" : au lieu de lire un rapport
-// d'echappement du compilateur, on mesure directement les octets alloues sur le Tas
-// via ThreadMXBean (com.sun.management), qui compte les allocations reelles de la JVM.
+// Mesure les octets reellement alloues sur le tas (ThreadMXBean) plutot que de
+// lire un rapport d'echappement du compilateur.
 public class StringConcatEscapeBenchmark {
 
-    // Volontairement petit : la concatenation '+=' est O(n^2) (copie toute la
-    // chaine a chaque tour), 1_000_000 iterations prendrait plusieurs minutes.
-    private static final int ITERATIONS = 20_000;
+    private static final int ITERATIONS = 20_000; // '+=' est O(n^2), pas plus
 
     public static void main(String[] args) {
         ThreadMXBean threadBean = (ThreadMXBean) ManagementFactory.getThreadMXBean();
         long threadId = Thread.currentThread().threadId();
 
-        // Rechauffe JIT.
         concatPlus(1000);
         concatBuilder(1000);
 
@@ -38,9 +34,7 @@ public class StringConcatEscapeBenchmark {
                 resultPlus.length(), resultBuilder.length());
     }
 
-    // Chaque '+=' cree une nouvelle String immuable sur le tas (l'ancienne devient
-    // immediatement inaccessible) : l'objet "s" ne peut jamais rester sur la pile,
-    // il echappe systematiquement car sa reference est reassignee a chaque tour.
+    // Chaque '+=' cree une nouvelle String immuable sur le tas.
     private static String concatPlus(int iterations) {
         String s = "";
         for (int i = 0; i < iterations; i++) {
@@ -49,8 +43,7 @@ public class StringConcatEscapeBenchmark {
         return s;
     }
 
-    // Le buffer interne du StringBuilder est mute en place : une seule allocation
-    // (redimensionnee au besoin) au lieu d'une par iteration.
+    // Buffer interne mute en place au lieu d'une allocation par iteration.
     private static String concatBuilder(int iterations) {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < iterations; i++) {

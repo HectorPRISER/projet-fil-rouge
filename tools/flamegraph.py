@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
-"""Equivalent de "go tool pprof -http=:8080" pour un fichier JFR (JDK Flight
-Recorder). Parse les echantillons jdk.ExecutionSample via `jfr print`,
-construit un arbre d'appels et genere un flamegraph interactif autonome
-(HTML + SVG + JS inline, sans dependance externe/CDN) qu'on ouvre dans un
-navigateur, comme la vue web de pprof.
-
-Usage:
-    python3 tools/flamegraph.py cpu.jfr flamegraph.html
+"""Genere un flamegraph HTML interactif autonome a partir d'un .jfr.
+Usage: python3 tools/flamegraph.py cpu.jfr flamegraph.html
 """
 import html
 import json
@@ -32,12 +26,9 @@ def parse_stacks(jfr_path):
             if stripped == "]":
                 in_stack = False
                 if current:
-                    # jfr liste la feuille (frame executee) en premier, la racine en dernier.
-                    # Le flamegraph veut la racine en premier -> on inverse.
-                    stacks.append(list(reversed(current)))
+                    stacks.append(list(reversed(current)))  # jfr: feuille -> racine, on inverse
                 continue
-            # Format : "pkg.Class.method(args) line: 42" -> on ne garde que la signature.
-            frame = stripped.rsplit(" line:", 1)[0]
+            frame = stripped.rsplit(" line:", 1)[0]  # "pkg.Class.method(args) line: 42" -> signature
             current.append(frame)
     return stacks
 

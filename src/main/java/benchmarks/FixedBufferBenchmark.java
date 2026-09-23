@@ -5,13 +5,9 @@ import java.lang.management.ManagementFactory;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 
-// Equivalent Java du "buffer fixe sur la pile" ([8]byte en Go) : remplacer les
-// allocations dynamiques (StringBuilder, String.format) par un tableau de taille
-// fixe, mute directement par index, sans jamais faire fuir de reference. En Java
-// on ne choisit pas la pile explicitement, mais un tableau local qui n'echappe
-// jamais de la methode est un candidat a la "scalar replacement" du JIT (variante
-// de l'escape analysis) : le tableau peut alors etre decompose en registres/pile
-// au lieu d'etre alloue sur le tas.
+// Remplace les allocations dynamiques (StringBuilder, String.format) par un
+// tableau de taille fixe mute par index. Un tableau local qui n'echappe pas
+// de la methode est candidat a la scalar replacement du JIT (pas de tas).
 public class FixedBufferBenchmark {
 
     private static final char[] HEX_DIGITS = "0123456789abcdef".toCharArray();
@@ -22,7 +18,6 @@ public class FixedBufferBenchmark {
         ThreadMXBean threadBean = (ThreadMXBean) ManagementFactory.getThreadMXBean();
         long threadId = Thread.currentThread().threadId();
 
-        // Rechauffe JIT.
         hexStringBuilder("warmup", digest);
         hexFixedBuffer("warmup", digest);
 
@@ -48,8 +43,7 @@ public class FixedBufferBenchmark {
         System.out.printf("(controle : dernier hash identique = %b)%n", r1.equals(r2));
     }
 
-    // Approche "naive" : StringBuilder + String.format("%02x", b) par octet,
-    // chaque appel a String.format alloue un Formatter, un Locale lookup, etc.
+    // Chaque appel a String.format alloue un Formatter, un Locale lookup, etc.
     private static String hexStringBuilder(String input, MessageDigest digest) {
         digest.reset();
         byte[] hash = digest.digest(input.getBytes());
@@ -60,9 +54,7 @@ public class FixedBufferBenchmark {
         return hex.toString();
     }
 
-    // Buffer fixe de taille connue a l'avance (32 octets de hash SHA-256 -> 64
-    // caracteres hexa), rempli par mutation directe d'index, sans concatenation
-    // ni formatage : aucune allocation intermediaire, une seule String finale.
+    // Rempli par index, sans concatenation ni formatage : une seule String finale.
     private static String hexFixedBuffer(String input, MessageDigest digest) {
         digest.reset();
         byte[] hash = digest.digest(input.getBytes());

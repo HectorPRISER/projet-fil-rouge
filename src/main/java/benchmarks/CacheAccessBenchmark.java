@@ -14,8 +14,7 @@ public class CacheAccessBenchmark {
             data[i] = i;
         }
 
-        // permutation[i] pointe vers un index aleatoire : chaque saut = 1 cache miss potentiel,
-        // aucune ligne de 64 octets ni prefetch materiel ne peut anticiper le prochain acces.
+        // Permutation cyclique aleatoire : chaque saut est un cache miss potentiel.
         int[] permutation = randomCycle(SIZE, 42);
 
         // Rechauffe JIT.
@@ -41,8 +40,7 @@ public class CacheAccessBenchmark {
         double seqPerAccessNs = (double) seqNanos / rounds / ACCESSES;
         double scatPerAccessNs = (double) scatNanos / rounds / ACCESSES;
 
-        // Frequence approximative pour convertir ns en cycles (a ajuster selon le CPU reel).
-        double ghz = 3.0;
+        double ghz = 3.0; // approximation pour convertir ns en cycles
         double seqCycles = seqPerAccessNs * ghz;
         double scatCycles = scatPerAccessNs * ghz;
 
@@ -61,8 +59,7 @@ public class CacheAccessBenchmark {
         System.out.printf("(checksums controle : seq=%d, scat=%d)%n", checksumSeq, checksumScat);
     }
 
-    // Parcours lineaire : le prefetcher materiel charge les prochaines lignes de 64 octets
-    // (16 int) en cache avant meme qu'elles soient demandees.
+    // Prefetch materiel efficace sur un parcours lineaire.
     private static long sequentialSum(int[] data) {
         long sum = 0;
         for (int i = 0; i < data.length; i++) {
@@ -71,8 +68,7 @@ public class CacheAccessBenchmark {
         return sum;
     }
 
-    // Pointer-chasing : chaque prochain index depend de la valeur lue, imprevisible,
-    // aucune ligne de cache voisine n'est utile. Cache miss quasi systematique en RAM.
+    // Pointer-chasing : index imprevisible, cache miss quasi systematique.
     private static long scatteredSum(int[] data, int[] permutation) {
         long sum = 0;
         int idx = 0;
@@ -83,9 +79,7 @@ public class CacheAccessBenchmark {
         return sum;
     }
 
-    // Genere un cycle unique couvrant tous les index (permutation de Fisher-Yates puis
-    // reliage en cycle), garantissant un parcours disperse sans jamais revisiter un index
-    // avant le tour complet.
+    // Cycle unique couvrant tous les index (Fisher-Yates + reliage en cycle).
     private static int[] randomCycle(int size, long seed) {
         int[] order = new int[size];
         for (int i = 0; i < size; i++) {

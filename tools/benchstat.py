@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
-"""Equivalent Java de `benchstat old.txt new.txt` : lance N repetitions de
-deux classes (avant/apres optimisation), extrait le temps du "Niveau 2"
-depuis leur sortie, et calcule moyenne/ecart-type/delta comme benchstat.
-
-Usage:
-    python3 tools/benchstat.py [N]   (N = nombre de repetitions, defaut 7)
+"""Compare 2 classes sur N runs (moyenne/ecart-type/delta), equivalent benchstat.
+Usage: python3 tools/benchstat.py [N]  (defaut 7)
 """
 import re
 import statistics
@@ -51,8 +47,6 @@ def main():
     factor = naive_mean / opt_mean
     print(f"\ndelta: {delta:+.2f}% (x{factor:.2f} plus rapide)")
 
-    # Test de significativite simple (Welch t-test degrade sans scipy) :
-    # si les intervalles moyenne+-stdev ne se chevauchent pas, l'ecart est net.
     naive_sd = statistics.stdev(naive_times) if len(naive_times) > 1 else 0.0
     opt_sd = statistics.stdev(optimized_times) if len(optimized_times) > 1 else 0.0
     if naive_mean - naive_sd > opt_mean + opt_sd:
