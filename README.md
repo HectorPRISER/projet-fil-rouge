@@ -17,6 +17,7 @@ java -cp out benchmarks.<NomClasse>   # un seul
 |---|---|
 | `BruteForceGenerator` | Casse 2 hash SHA-256 par force brute (mesure de reference CPU) |
 | `BruteForceGeneratorNaive` | Version pre-optimisation, gardee pour comparaison (benchstat) |
+| `BruteForceGeneratorParallel` | Partitionne par 1er caractere, distribue via `BlockingQueue` (channel Go) a N workers |
 | `CacheAccessBenchmark` | Acces memoire sequentiel vs disperse → cout d'un cache miss RAM |
 | `CandidateStructureBenchmark` | ArrayList vs LinkedList : parcours + acces indexe |
 | `HashThroughputBenchmark` | ArrayList vs LinkedList sous charge de hachage |
@@ -49,6 +50,7 @@ java -cp out benchmarks.<NomClasse>   # un seul
 | Boucle critique 100% buffers reutilises | 0 B/op, ~12M ops/s (PASS) |
 | CPU reellement gaspille dans `String.format("%02x")` | **96,7 %** (0,56 % dans le SHA-256 reel) |
 | `BruteForceGenerator` : comparaison hex → comparaison binaire 64 bits | **x91,3** plus rapide (verifie sur 5 runs, intervalles disjoints) |
+| Partitionnement + N workers (`BlockingQueue`) vs sequentiel | **~x2** (20 workers, 779 ms → ~400 ms, Niveau 2) |
 
 Details du profiling + preuve statistique : voir
 [`profiles/audit_report.md`](profiles/audit_report.md).

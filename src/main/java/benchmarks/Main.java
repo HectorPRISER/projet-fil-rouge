@@ -1,13 +1,13 @@
 package benchmarks;
 
-import java.security.DigestException;
-import java.security.NoSuchAlgorithmException;
-
 public class Main {
 
-    public static void main(String[] args) throws NoSuchAlgorithmException, DigestException {
+    public static void main(String[] args) throws Exception {
         System.out.println("=== BruteForceGenerator ===");
         BruteForceGenerator.main(args);
+
+        System.out.println("=== BruteForceGeneratorParallel ===");
+        BruteForceGeneratorParallel.main(args);
 
         System.out.println("=== CacheAccessBenchmark ===");
         CacheAccessBenchmark.main(args);
