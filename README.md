@@ -16,13 +16,16 @@ src/main/java/benchmarks/
     StructPaddingBenchmark.java     Compactage de structure (padding) : ordre des champs
     FixedBufferBenchmark.java       Buffer fixe + mutation par index vs StringBuilder/String.format
     ZeroAllocValidationBenchmark.java Validation 0 B/op, 0 allocs/op sur la boucle critique
+    BruteForceGeneratorNaive.java   Version "avant optimisation" de BruteForceGenerator, gardee pour le benchstat
     Main.java                       Lance les 8 benchmarks a la suite
 
 tools/
     flamegraph.py                   Genere un flamegraph HTML interactif a partir d'un .jfr
     analyze_bottleneck.py           Quantifie la part du CPU passee dans le parsing/formatage hex vs le SHA-256 reel
+    benchstat.py                    Compare avant/apres sur N repetitions (moyenne, ecart-type, delta), equivalent Go benchstat
+    annotate_flamegraph.py          Annote une capture de flamegraph (rectangles + texte) pour le rapport d'audit
 
-profiles/                           Sorties de profiling generees (.jfr, flamegraph.html) - non versionnees
+profiles/                           Sorties de profiling generees (.jfr, flamegraph.html, audit_report.md) - non versionnees
 ```
 
 Tous les fichiers sont dans le package `benchmarks`.
@@ -75,10 +78,20 @@ conversion textuelle de la boucle chaude :
   equivalent Java de `encoding/binary.Uint64` en Go) : 4 comparaisons de
   `long` au lieu de 32 comparaisons de `byte` (et surtout 0 conversion hex)
 
-**Gain mesure** : Niveau 2 (10,76M tentatives) passe de **64 287 ms a
-779 ms**, soit environ **x82**. Niveau 1 passe de 1063 ms a 36 ms. Confirme
-que le goulet identifie par le profiling CPU (String.format = 96,7% du
-temps) etait bien le vrai probleme.
+**Gain mesure** (single run) : Niveau 2 (10,76M tentatives) passe de
+64 287 ms a 779 ms, soit environ x82. Niveau 1 passe de 1063 ms a 36 ms.
+Confirme statistiquement par `benchstat.py` sur 5 repetitions (voir section
+"Preuve statistique" plus bas) : **x91,27** en moyenne, intervalles de
+confiance totalement disjoints. Le goulet identifie par le profiling CPU
+(String.format = 96,7% du temps) etait bien le vrai probleme.
+
+### BruteForceGeneratorNaive
+
+Copie figee de `BruteForceGenerator` **avant** l'optimisation "comparaison
+binaire 64 bits" (recuperee depuis l'historique git). Sert uniquement de
+reference pour `tools/benchstat.py`, qui compare les deux versions sur
+plusieurs repetitions. N'est pas lancee depuis `Main` (trop lente : ~64s
+par run sur le Niveau 2).
 
 ### CacheAccessBenchmark
 
@@ -263,6 +276,37 @@ textuelle. `FixedBufferBenchmark` et `ZeroAllocValidationBenchmark`
 suppriment ce goulet en remplacant `String.format` par une table
 `HEX_DIGITS` et un buffer mute par index.
 
+## Preuve statistique (benchstat) & rapport d'audit
+
+Equivalent Java de `benchstat old.txt new.txt` : `tools/benchstat.py`
+lance N repetitions de `BruteForceGeneratorNaive` (avant) et
+`BruteForceGenerator` (apres), calcule moyenne/ecart-type/delta, et
+verifie que l'ecart depasse largement le bruit de mesure.
+
+```bash
+python3 tools/benchstat.py 7
+```
+
+Le rapport d'audit complet (constat, optimisation, flamegraphs avant/apres
+annotes, resultats benchstat) est dans
+[`profiles/audit_report.md`](profiles/audit_report.md), regenerable via :
+
+```bash
+# 1. Profil "apres" (le "avant" existe deja : profiles/cpu.jfr)
+java -XX:StartFlightRecording=filename=profiles/cpu_after.jfr,settings=profile \
+     -cp out benchmarks.BruteForceGenerator
+
+# 2. Flamegraphs + captures + annotations
+python3 tools/flamegraph.py profiles/cpu_after.jfr profiles/flamegraph_after.html
+google-chrome --headless=new --screenshot=profiles/flamegraph_after.png \
+     --window-size=1280,900 "file://$(pwd)/profiles/flamegraph_after.html"
+python3 tools/annotate_flamegraph.py profiles/flamegraph_after.png \
+     profiles/flamegraph_after_annotated.png "0,177,1265,140,0% regex - 58% SHA-256 reel"
+
+# 3. Preuve statistique
+python3 tools/benchstat.py 7
+```
+
 ## Historique du projet
 
 1. Ecriture de `BruteForceGenerator` : cassage de hash SHA-256 par force
@@ -312,3 +356,10 @@ suppriment ce goulet en remplacant `String.format` par une table
     (`VarHandle`, equivalent Java du `uint64` en Go) au lieu de comparer
     des chaines hexadecimales. Gain mesure : x82 sur le Niveau 2 (64 287 ms
     -> 779 ms).
+14. Preuve statistique du gain (equivalent `benchstat`) : conservation de
+    l'ancienne version (`BruteForceGeneratorNaive`, depuis l'historique
+    git) comme reference, ecriture de `tools/benchstat.py` (moyenne/
+    ecart-type/delta sur N repetitions) et `tools/annotate_flamegraph.py`.
+    Rapport d'audit complet dans `profiles/audit_report.md` avec
+    flamegraphs avant/apres annotes. Resultat : x91,27 (intervalles
+    disjoints, gain confirme statistiquement, pas du bruit).
