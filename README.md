@@ -21,6 +21,8 @@ java -cp out benchmarks.<NomClasse>   # un seul
 | `ScalingBenchmark` | Speedup/efficacite en fonction du nombre de workers (1, 2, 4... N coeurs) sur un scan exhaustif de taille fixe |
 | `CrackUtil` | Logique de scan partagee entre le mode local et le mode distribue |
 | `DistributedMaster` / `DistributedWorker` | Architecture maitre/esclaves sur TCP : partitionne et distribue les blocs a des workers distants (processus/machines separes) |
+| `JsonUtil` | JSON minimal fait main (objets plats), sans dependance externe |
+| `RestMaster` / `RestWorker` | Version A : meme architecture maitre/esclaves, mais en HTTP/1.1 + JSON (`GET /block`, `POST /report`) |
 | `CacheAccessBenchmark` | Acces memoire sequentiel vs disperse → cout d'un cache miss RAM |
 | `CandidateStructureBenchmark` | ArrayList vs LinkedList : parcours + acces indexe |
 | `HashThroughputBenchmark` | ArrayList vs LinkedList sous charge de hachage |
@@ -57,6 +59,7 @@ java -cp out benchmarks.<NomClasse>   # un seul
 | Pool borne sur `availableProcessors()` (20) vs sur/sous-dimensionne (scan exhaustif, meme travail) | optimal a 680 ms ; 10 workers = 734 ms, 40-320 workers = 812-883 ms |
 | Scaling 1→20 workers, AVANT correction (compteur `AtomicLong` partage = contention) | efficacite 100%→11,6% : loin du lineaire |
 | Scaling 1→20 workers, APRES correction (compteur local par worker, merge final) | quasi-lineaire jusqu'a 8 coeurs (efficacite 71,5%), plateau ensuite ; speedup x7,14 a 20 coeurs |
+| Distribue TCP (4 esclaves) vs Distribue REST/JSON (4 esclaves), meme charge | 751 ms vs 6331 ms — **REST ~x8 plus lent** (overhead requete HTTP par bloc) |
 
 Details du profiling + preuve statistique : voir
 [`profiles/audit_report.md`](profiles/audit_report.md).
@@ -81,6 +84,21 @@ Teste localement (localhost) : 1 esclave = 1319 ms, 8 esclaves = 747 ms (~x1,77)
 Le gain est plus faible qu'en local threads (~x7 a coeurs egaux) car chaque bloc
 implique un aller-retour reseau synchrone (maitre attend la reponse avant d'envoyer
 le bloc suivant) : la distribution reseau vaut le cout surtout sur de plus gros blocs.
+
+### Version A (REST/JSON)
+
+```bash
+java -cp out benchmarks.RestMaster <port> <minLength> <maxLength> <targetHashHex>
+java -cp out benchmarks.RestWorker http://<host_maitre>:<port>
+```
+
+Meme partitionnement, mais protocole HTTP/1.1 standard (`GET /block` /
+`POST /report`, JSON) au lieu du protocole texte sur TCP brut. Teste (Niveau
+2, 4 esclaves) : **6331 ms**, contre 751 ms pour la version TCP a workers
+egaux — **~x8 plus lent**. Le cout vient de la requete HTTP par bloc (headers,
+connexion), negligeable devant le calcul seulement si les blocs sont gros.
+REST/JSON gagne en interoperabilite (client HTTP standard, JSON lisible) ;
+le protocole TCP texte gagne en performance sur du grain fin.
 
 ## Profiling (JFR) & preuve statistique
 
