@@ -9,6 +9,9 @@ public class Main {
         System.out.println("=== BruteForceGeneratorParallel ===");
         BruteForceGeneratorParallel.main(args);
 
+        System.out.println("=== ScalingBenchmark ===");
+        ScalingBenchmark.main(args);
+
         System.out.println("=== CacheAccessBenchmark ===");
         CacheAccessBenchmark.main(args);
 

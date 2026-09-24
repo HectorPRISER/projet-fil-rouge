@@ -18,6 +18,9 @@ java -cp out benchmarks.<NomClasse>   # un seul
 | `BruteForceGenerator` | Casse 2 hash SHA-256 par force brute (mesure de reference CPU) |
 | `BruteForceGeneratorNaive` | Version pre-optimisation, gardee pour comparaison (benchstat) |
 | `BruteForceGeneratorParallel` | Partitionne par 1er caractere, `BlockingQueue` (channel), pool borne sur `availableProcessors()`, arret precoce via `Thread.interrupt()` (equivalent `context.WithCancel`) |
+| `ScalingBenchmark` | Speedup/efficacite en fonction du nombre de workers (1, 2, 4... N coeurs) sur un scan exhaustif de taille fixe |
+| `CrackUtil` | Logique de scan partagee entre le mode local et le mode distribue |
+| `DistributedMaster` / `DistributedWorker` | Architecture maitre/esclaves sur TCP : partitionne et distribue les blocs a des workers distants (processus/machines separes) |
 | `CacheAccessBenchmark` | Acces memoire sequentiel vs disperse → cout d'un cache miss RAM |
 | `CandidateStructureBenchmark` | ArrayList vs LinkedList : parcours + acces indexe |
 | `HashThroughputBenchmark` | ArrayList vs LinkedList sous charge de hachage |
@@ -52,9 +55,32 @@ java -cp out benchmarks.<NomClasse>   # un seul
 | `BruteForceGenerator` : comparaison hex → comparaison binaire 64 bits | **x91,3** plus rapide (verifie sur 5 runs, intervalles disjoints) |
 | Partitionnement + N workers (`BlockingQueue`) vs sequentiel | **~x2** (20 workers, 779 ms → ~400 ms, Niveau 2) |
 | Pool borne sur `availableProcessors()` (20) vs sur/sous-dimensionne (scan exhaustif, meme travail) | optimal a 680 ms ; 10 workers = 734 ms, 40-320 workers = 812-883 ms |
+| Scaling 1→20 workers, AVANT correction (compteur `AtomicLong` partage = contention) | efficacite 100%→11,6% : loin du lineaire |
+| Scaling 1→20 workers, APRES correction (compteur local par worker, merge final) | quasi-lineaire jusqu'a 8 coeurs (efficacite 71,5%), plateau ensuite ; speedup x7,14 a 20 coeurs |
 
 Details du profiling + preuve statistique : voir
 [`profiles/audit_report.md`](profiles/audit_report.md).
+
+## Architecture distribuee (maitre/esclaves)
+
+```bash
+# Maitre (partitionne et distribue par TCP)
+java -cp out benchmarks.DistributedMaster <port> <minLength> <maxLength> <targetHashHex>
+
+# Un ou plusieurs esclaves (meme machine ou machines distantes)
+java -cp out benchmarks.DistributedWorker <host_maitre> <port>
+```
+
+Exemple (Niveau 2, 4 esclaves) :
+```bash
+java -cp out benchmarks.DistributedMaster 6000 1 4 bd7d0ea8cf7ade4a446ba4efc46fd99071ec3f423770991ac51f70ec5a894dc7 &
+for i in 1 2 3 4; do java -cp out benchmarks.DistributedWorker localhost 6000 & done
+```
+
+Teste localement (localhost) : 1 esclave = 1319 ms, 8 esclaves = 747 ms (~x1,77).
+Le gain est plus faible qu'en local threads (~x7 a coeurs egaux) car chaque bloc
+implique un aller-retour reseau synchrone (maitre attend la reponse avant d'envoyer
+le bloc suivant) : la distribution reseau vaut le cout surtout sur de plus gros blocs.
 
 ## Profiling (JFR) & preuve statistique
 

@@ -29,18 +29,34 @@ public class BruteForceGeneratorParallel {
 
     private static final Block POISON_PILL = new Block(-1, '\0');
 
-    public static void main(String[] args) throws Exception {
-        crack("a532ca5e11e2b06ccc911e0d962a4864cdb87da05723f3a050a376d0f0895e63", 1, 3, "Niveau 1");
-        crack("bd7d0ea8cf7ade4a446ba4efc46fd99071ec3f423770991ac51f70ec5a894dc7", 1, 4, "Niveau 2");
-    }
+    record Result(String found, long attempts, long elapsedMs) {}
 
-    private static void crack(String targetHashHex, int minLength, int maxLength, String label) throws Exception {
-        byte[] targetHash = decodeHex(targetHashHex);
-        // Pool borne exactement sur le nombre de coeurs logiques (equivalent runtime.NumCPU()) :
-        // au-dela, le CPU passe plus de temps a ordonnancer les threads qu'a hacher.
-        // WORKERS permet de forcer un autre nombre pour mesurer la penalite d'oversubscription.
+    public static void main(String[] args) throws Exception {
+        // WORKERS permet de forcer un nombre de workers pour mesurer la penalite d'oversubscription.
         String override = System.getenv("WORKERS");
         int workers = override != null ? Integer.parseInt(override) : Runtime.getRuntime().availableProcessors();
+
+        printResult("Niveau 1", workers,
+                crack("a532ca5e11e2b06ccc911e0d962a4864cdb87da05723f3a050a376d0f0895e63", 1, 3, workers));
+        printResult("Niveau 2", workers,
+                crack("bd7d0ea8cf7ade4a446ba4efc46fd99071ec3f423770991ac51f70ec5a894dc7", 1, 4, workers));
+    }
+
+    private static void printResult(String label, int workers, Result r) {
+        if (r.found() != null) {
+            System.out.printf("%s : mot de passe trouve = \"%s\" (%d tentatives, %d ms, %d workers)%n",
+                    label, r.found(), r.attempts(), r.elapsedMs(), workers);
+        } else {
+            System.out.printf("%s : echec, aucun mot ne correspond (%d tentatives, %d ms, %d workers)%n",
+                    label, r.attempts(), r.elapsedMs(), workers);
+        }
+    }
+
+    // Pool borne exactement sur `workers` (equivalent runtime.NumCPU() quand workers =
+    // availableProcessors()) : au-dela, le CPU passe plus de temps a ordonnancer les
+    // threads qu'a hacher. Package-private : reutilise par ScalingBenchmark.
+    static Result crack(String targetHashHex, int minLength, int maxLength, int workers) throws Exception {
+        byte[] targetHash = decodeHex(targetHashHex);
 
         BlockingQueue<Block> channel = new LinkedBlockingQueue<>();
         for (int length = minLength; length <= maxLength; length++) {
@@ -70,18 +86,15 @@ public class BruteForceGeneratorParallel {
         }
 
         long elapsedMs = (System.nanoTime() - start) / 1_000_000;
-        String result = found.get();
-        if (result != null) {
-            System.out.printf("%s : mot de passe trouve = \"%s\" (%d tentatives, %d ms, %d workers)%n",
-                    label, result, attempts.get(), elapsedMs, workers);
-        } else {
-            System.out.printf("%s : echec, aucun mot ne correspond (%d tentatives, %d ms, %d workers)%n",
-                    label, attempts.get(), elapsedMs, workers);
-        }
+        return new Result(found.get(), attempts.get(), elapsedMs);
     }
 
     private static void worker(BlockingQueue<Block> channel, byte[] targetHash,
                                 AtomicReference<String> found, AtomicLong attempts, Thread[] pool) {
+        // Compteur local (pas d'Atomic) : un AtomicLong partage incremente a chaque hash
+        // (15M fois, par tous les workers) serait lui-meme un goulet de contention. On
+        // accumule localement et on ne merge dans le compteur global qu'une fois a la fin.
+        long[] local = new long[1];
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             while (!Thread.currentThread().isInterrupted() && found.get() == null) {
@@ -91,20 +104,22 @@ public class BruteForceGeneratorParallel {
                 }
                 char[] candidate = new char[block.length()];
                 candidate[0] = block.firstChar();
-                generate(candidate, 1, digest, targetHash, found, attempts, pool);
+                generate(candidate, 1, digest, targetHash, found, local, pool);
             }
         } catch (InterruptedException | NoSuchAlgorithmException e) {
             Thread.currentThread().interrupt();
+        } finally {
+            attempts.addAndGet(local[0]);
         }
     }
 
     private static void generate(char[] candidate, int position, MessageDigest digest, byte[] targetHash,
-                                  AtomicReference<String> found, AtomicLong attempts, Thread[] pool) {
+                                  AtomicReference<String> found, long[] local, Thread[] pool) {
         if (Thread.currentThread().isInterrupted() || found.get() != null) {
             return;
         }
         if (position == candidate.length) {
-            attempts.incrementAndGet();
+            local[0]++;
             String word = new String(candidate);
             digest.reset();
             byte[] hash = digest.digest(word.getBytes());
@@ -115,7 +130,7 @@ public class BruteForceGeneratorParallel {
         }
         for (char c : ALPHABET) {
             candidate[position] = c;
-            generate(candidate, position + 1, digest, targetHash, found, attempts, pool);
+            generate(candidate, position + 1, digest, targetHash, found, local, pool);
             if (Thread.currentThread().isInterrupted() || found.get() != null) {
                 return;
             }
