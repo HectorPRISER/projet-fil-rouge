@@ -24,6 +24,7 @@ java -cp out benchmarks.<NomClasse>   # un seul
 | `JsonUtil` | JSON minimal fait main (objets plats), sans dependance externe |
 | `RestMaster` / `RestWorker` | Version A : meme architecture maitre/esclaves, mais en HTTP/1.1 + JSON (`GET /block`, `POST /report`) |
 | `grpc-version/` | Version B : meme architecture en gRPC/Protobuf, flux bidirectionnel HTTP/2 (module Maven separe, voir plus bas) |
+| `RestBenchServer` / `GrpcBenchServer` (+ `ScanOne` dans le .proto) | Route unaire dediee (1 bloc = 1 appel) pour comparer REST/JSON et gRPC/Protobuf a l'identique avec vegeta/ghz |
 | `CacheAccessBenchmark` | Acces memoire sequentiel vs disperse → cout d'un cache miss RAM |
 | `CandidateStructureBenchmark` | ArrayList vs LinkedList : parcours + acces indexe |
 | `HashThroughputBenchmark` | ArrayList vs LinkedList sous charge de hachage |
@@ -62,6 +63,7 @@ java -cp out benchmarks.<NomClasse>   # un seul
 | Scaling 1→20 workers, APRES correction (compteur local par worker, merge final) | quasi-lineaire jusqu'a 8 coeurs (efficacite 71,5%), plateau ensuite ; speedup x7,14 a 20 coeurs |
 | Distribue TCP (4 esclaves) vs Distribue REST/JSON (4 esclaves), meme charge | 751 ms vs 6331 ms — **REST ~x8 plus lent** (overhead requete HTTP par bloc) |
 | Distribue gRPC/Protobuf (4 esclaves), meme charge | ~2170 ms — **~x2,9 plus rapide que REST**, ~x2,9 plus lent que TCP brut |
+| Tir de charge vegeta (REST) vs ghz (gRPC), 50 req/s, meme travail/requete | P50 55 ms vs 15 ms (**~x3,6**) ; ~690 o vs ~442 o/requete (**~-36%**) |
 
 Details du profiling + preuve statistique : voir
 [`profiles/audit_report.md`](profiles/audit_report.md).
@@ -123,6 +125,44 @@ Teste (Niveau 2, 4 esclaves) : **~2170 ms**, contre 6331 ms pour REST/JSON
 encore plus lent que le protocole TCP texte brut a workers egaux (751 ms) :
 le framing HTTP/2 + serialisation Protobuf a un cout, mais bien moindre que
 REST/JSON pour un flux continu de petits messages.
+
+### Tirs de charge (vegeta / ghz) : REST/JSON vs gRPC/Protobuf
+
+Pour comparer les deux protocoles a travail strictement identique (pas
+l'architecture distribuee complete, juste le cout protocole), `RestBenchServer`
+(`POST /scan`) et `GrpcBenchServer` (RPC unaire `ScanOne`) exposent chacun
+UN SEUL bloc de calcul (238 328 hachages SHA-256, ~17 ms de calcul pur) par
+appel. Charge : 50 requetes/s, 10 concurrents, 10 s, avec
+[vegeta](https://github.com/tsenart/vegeta) (REST) et
+[ghz](https://github.com/bojand/ghz) (gRPC) ; CPU mesure via `pidstat`,
+bande passante via les compteurs reseau (`/proc/net/dev`, interface loopback).
+
+```bash
+java -cp out benchmarks.RestBenchServer 6300
+java -cp grpc-version/target/crack-grpc-1.0-all.jar benchmarks.grpc.GrpcBenchServer 6301
+
+vegeta attack -targets=targets.txt -rate=50/s -duration=10s -workers=10 | vegeta report
+ghz --insecure --proto=grpc-version/src/main/proto/crack.proto \
+    --call=benchmarks.grpc.CrackService.ScanOne -d '{...}' --rps 50 -c 10 -z 10s localhost:6301
+```
+
+| Metrique | REST/JSON | gRPC/Protobuf |
+|---|---|---|
+| P50 | 55 ms | 15 ms |
+| P90 | 57 ms | 16,5 ms |
+| P99 | 59-75 ms | 18-19 ms |
+| CPU serveur (moyenne) | 74,5 % | 80,9 % |
+| Octets reseau / requete (RX, loopback) | ~690 o | ~442 o |
+
+gRPC est **~3,6x plus rapide** en latence mediane pour un travail identique
+(15 ms, tres proche des ~17 ms de calcul SHA-256 pur : overhead protocole
+quasi nul), et consomme **~36 % moins de bande passante** par requete
+(binaire + HTTP/2 HPACK vs JSON + en-tetes HTTP/1.1 repetes). REST/JSON
+ajoute ~38 ms de latence par requete au-dessus du meme calcul (55 ms vs
+17 ms) : le cout du parsing JSON + HTTP/1.1 texte devient le facteur
+dominant, pas le calcul. Le CPU serveur legerement plus eleve pour gRPC
+(80,9 % vs 74,5 %, a debit egal de 50 req/s) reste a confirmer sur un test
+plus long ; l'ecart de latence est la mesure la plus fiable ici.
 
 ## Profiling (JFR) & preuve statistique
 

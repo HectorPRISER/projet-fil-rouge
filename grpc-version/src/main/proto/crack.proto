@@ -16,6 +16,10 @@ service CrackService {
   // en parallele sur la meme connexion (full-duplex), sans aller-retour
   // requete/reponse comme en REST.
   rpc Distribute(stream WorkerReport) returns (stream Block);
+
+  // RPC unaire (1 bloc = 1 appel), pour comparer protocole a protocole avec
+  // REST/JSON (vegeta/ghz) : meme travail, meme forme de requete/reponse.
+  rpc ScanOne(Block) returns (WorkerReport);
 }
 
 message Block {
