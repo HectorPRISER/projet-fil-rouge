@@ -1,0 +1,34 @@
+syntax = "proto3";
+
+package benchmarks.grpc;
+
+option java_package = "benchmarks.grpc";
+option java_outer_classname = "CrackProto";
+
+// Version B : meme architecture maitre/esclaves que RestMaster/RestWorker et
+// DistributedMaster/DistributedWorker, mais en gRPC/Protobuf sur HTTP/2, avec un
+// flux bidirectionnel unique par worker (au lieu d'une requete HTTP par bloc) :
+// zero parsing texte (binaire, champs a numero fixe), multiplexe sur une seule
+// connexion HTTP/2.
+service CrackService {
+  // Le worker ouvre un flux : il envoie des WorkerReport (le premier vide, pour
+  // s'annoncer), le maitre repond par un flux de Block. Les deux flux tournent
+  // en parallele sur la meme connexion (full-duplex), sans aller-retour
+  // requete/reponse comme en REST.
+  rpc Distribute(stream WorkerReport) returns (stream Block);
+}
+
+message Block {
+  int32 length = 1;
+  string first_char = 2;
+  string target_hash = 3;
+  bool stop = 4;
+}
+
+message WorkerReport {
+  int32 length = 1;
+  string first_char = 2;
+  int64 attempts = 3;
+  string found = 4; // vide si pas trouve
+  bool ready = 5;   // premier message envoye par le worker pour s'annoncer
+}

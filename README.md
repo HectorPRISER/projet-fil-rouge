@@ -23,6 +23,7 @@ java -cp out benchmarks.<NomClasse>   # un seul
 | `DistributedMaster` / `DistributedWorker` | Architecture maitre/esclaves sur TCP : partitionne et distribue les blocs a des workers distants (processus/machines separes) |
 | `JsonUtil` | JSON minimal fait main (objets plats), sans dependance externe |
 | `RestMaster` / `RestWorker` | Version A : meme architecture maitre/esclaves, mais en HTTP/1.1 + JSON (`GET /block`, `POST /report`) |
+| `grpc-version/` | Version B : meme architecture en gRPC/Protobuf, flux bidirectionnel HTTP/2 (module Maven separe, voir plus bas) |
 | `CacheAccessBenchmark` | Acces memoire sequentiel vs disperse → cout d'un cache miss RAM |
 | `CandidateStructureBenchmark` | ArrayList vs LinkedList : parcours + acces indexe |
 | `HashThroughputBenchmark` | ArrayList vs LinkedList sous charge de hachage |
@@ -60,6 +61,7 @@ java -cp out benchmarks.<NomClasse>   # un seul
 | Scaling 1→20 workers, AVANT correction (compteur `AtomicLong` partage = contention) | efficacite 100%→11,6% : loin du lineaire |
 | Scaling 1→20 workers, APRES correction (compteur local par worker, merge final) | quasi-lineaire jusqu'a 8 coeurs (efficacite 71,5%), plateau ensuite ; speedup x7,14 a 20 coeurs |
 | Distribue TCP (4 esclaves) vs Distribue REST/JSON (4 esclaves), meme charge | 751 ms vs 6331 ms — **REST ~x8 plus lent** (overhead requete HTTP par bloc) |
+| Distribue gRPC/Protobuf (4 esclaves), meme charge | ~2170 ms — **~x2,9 plus rapide que REST**, ~x2,9 plus lent que TCP brut |
 
 Details du profiling + preuve statistique : voir
 [`profiles/audit_report.md`](profiles/audit_report.md).
@@ -99,6 +101,28 @@ egaux — **~x8 plus lent**. Le cout vient de la requete HTTP par bloc (headers,
 connexion), negligeable devant le calcul seulement si les blocs sont gros.
 REST/JSON gagne en interoperabilite (client HTTP standard, JSON lisible) ;
 le protocole TCP texte gagne en performance sur du grain fin.
+
+### Version B (gRPC/Protobuf)
+
+Module Maven separe (`grpc-version/`, protobuf-maven-plugin + grpc-java ;
+le reste du projet reste pur javac). Contrat dans
+[`grpc-version/src/main/proto/crack.proto`](grpc-version/src/main/proto/crack.proto) :
+un service `CrackService` avec un seul RPC bidirectionnel `Distribute`
+(le worker envoie des `WorkerReport`, le maitre repond par un flux de
+`Block`, sur la meme connexion HTTP/2 — zero parsing texte, contrairement
+a REST/JSON ou au protocole TCP en lignes).
+
+```bash
+cd grpc-version && mvn -q package
+java -cp target/crack-grpc-1.0-all.jar benchmarks.grpc.GrpcMaster <port> <minLength> <maxLength> <targetHashHex>
+java -cp target/crack-grpc-1.0-all.jar benchmarks.grpc.GrpcWorker <host_maitre> <port>
+```
+
+Teste (Niveau 2, 4 esclaves) : **~2170 ms**, contre 6331 ms pour REST/JSON
+(**~x2,9 plus rapide**, flux persistant vs 1 requete HTTP par bloc) mais
+encore plus lent que le protocole TCP texte brut a workers egaux (751 ms) :
+le framing HTTP/2 + serialisation Protobuf a un cout, mais bien moindre que
+REST/JSON pour un flux continu de petits messages.
 
 ## Profiling (JFR) & preuve statistique
 

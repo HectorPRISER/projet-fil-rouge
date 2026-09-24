@@ -2,3 +2,4 @@ out/
 *.class
 profiles/*.jfr
 profiles/*.html
+grpc-version/target/
